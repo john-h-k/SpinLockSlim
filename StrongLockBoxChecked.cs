@@ -4,7 +4,7 @@
     {
         public class StrongLockBox
         {
-            public SpinLockSlimChecked Lock { get; }
+            public SpinLockSlimChecked Lock { get; } = new SpinLockSlimChecked();
         }
     }
 }
