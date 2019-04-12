@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Threading;
 
-namespace CorePlayground.Locks
+namespace Locks
 {
-    public static class ThrowHelper
+    internal static class ThrowHelper
     {
         public static void ThrowArgumentException(string message = null, string paramName = null, Exception inner = null)
         { 

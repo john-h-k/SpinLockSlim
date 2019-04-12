@@ -3,7 +3,9 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
-namespace CorePlayground.Locks
+// ReSharper disable RedundantAssignment
+
+namespace Locks
 {
     [DebuggerDisplay("Acquired = {(_acquired & 1) == 1}, OwnerThreadId = {_acquired >> 1}")]
     public struct SpinLockSlimChecked
