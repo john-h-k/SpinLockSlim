@@ -20,7 +20,7 @@ namespace Locks
         private volatile int _acquired; // either 1 or 0
 
         /// <summary>
-        /// Safely enter the lock. If this method returns, <paramref name="taken"/>
+        /// Enter the lock. If this method returns, <paramref name="taken"/>
         /// will be <c>true</c>. If an exception occurs, <paramref name="taken"/> will indicate
         /// whether the lock was taken and needs to be released using <see cref="Exit()"/>
         /// This method may never exit
@@ -77,6 +77,8 @@ namespace Locks
             taken = true;
         }
 
+        private static readonly Stopwatch Watch = Stopwatch.StartNew();
+
         /// <summary>
         /// Try to safely enter the lock for a certain <see cref="TimeSpan"/> (<paramref name="timeout"/>).
         /// <paramref name="taken"/> will be <c>true</c> if the lock was taken, else <c>false</c>.
@@ -89,11 +91,12 @@ namespace Locks
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void TryEnter(ref bool taken, TimeSpan timeout)
         {
-            Stopwatch watch = Stopwatch.StartNew();
+            TimeSpan start = Watch.Elapsed;
+
             // if it acquired == 0, change it to 1 and return true, else return false
             while (Interlocked.CompareExchange(ref _acquired, 1, 0) != 0)
             {
-                if (watch.Elapsed >= timeout)
+                if ((Watch.Elapsed - start) >= timeout)
                 {
                     taken = false;
                     return;
@@ -121,6 +124,7 @@ namespace Locks
         /// only calls <see cref="Exit()"/> when it has ownership
         /// </summary>[MethodImpl(AggressiveInlining_AggressiveOpts)]
         /// <param name="memBarrier">Whether a memory barrier should be inserted after the release</param>
+        [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void Exit(bool memBarrier)
         {
             // release the lock - int32 write will always be atomic
@@ -134,7 +138,8 @@ namespace Locks
         /// Exit the lock with a post-release memory barrier. This method is dangerous and must be called only once the caller is sure they have
         /// ownership of the lock. Use <see cref="SpinLockSlimChecked"/> for debugging to ensure your code
         /// only calls <see cref="Exit()"/> when it has ownership
-        /// </summary>[MethodImpl(AggressiveInlining_AggressiveOpts)]
+        /// </summary>
+        [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void ExitWithBarrier()
         {
             // release the lock - int32 write will always be atomic
