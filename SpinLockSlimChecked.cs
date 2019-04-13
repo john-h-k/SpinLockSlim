@@ -58,7 +58,8 @@ namespace Locks
         {
             EnsureFalseAndNotRecursiveEntry(taken);
 
-            // if it acquired == 0, change it to 1 and return true, else return false
+            // if acquired == 0 (the lock is not taken), change it to 1 (take the lock)
+            // and return true, else return false
             taken = Interlocked.CompareExchange(ref _acquired, NewAcquiredValue, 0) == 0;
         }
 
@@ -78,7 +79,8 @@ namespace Locks
         {
             EnsureFalseAndNotRecursiveEntry(taken);
 
-            // if it acquired == 0, change it to 1 and return true, else return false
+            // if acquired == 0 (the lock is not taken), change it to 1 (take the lock)
+            // and return true, else retry until it we run out of iterations
             while (Interlocked.CompareExchange(ref _acquired, NewAcquiredValue, 0) != 0)
             {
                 if (iterations-- == 0) // postfix decrement, so no issue if iterations == 0 at first
@@ -101,16 +103,20 @@ namespace Locks
         /// </summary>
         /// <param name="taken">A reference to a bool that indicates whether the lock is taken</param>
         /// <param name="timeout">The <see cref="TimeSpan"/> to attempt to acquire the lock for before
-        /// returning without the lock</param>
+        /// returning without the lock. A negative <see cref="TimeSpan"/>will cause an exception</param>
         /// <exception cref="ArgumentException">Thrown if <paramref name="taken"/> is <c>true</c></exception>
-        /// <exception cref="LockRecursionException">Thrown if the current thread already owns this lock</exception>[MethodImpl(AggressiveInlining_AggressiveOpts)]
+        /// <exception cref="LockRecursionException">Thrown if the current thread already owns this lock</exception>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="timeout"/> is negative</exception>
+        [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void TryEnter(ref bool taken, TimeSpan timeout)
         {
             TimeSpan start = Watch.Elapsed;
 
+            EnsurePositiveTimeSpan(timeout);
             EnsureFalseAndNotRecursiveEntry(taken);
 
-            // if it acquired == 0, change it to 1 and return true, else return false
+            // if acquired == 0 (the lock is not taken), change it to 1 (take the lock)
+            // and return true, else retry until it we run out of time
             while (Interlocked.CompareExchange(ref _acquired, 1, 0) != 0)
             {
                 if ((Watch.Elapsed - start) >= timeout)
@@ -139,7 +145,8 @@ namespace Locks
         /// <summary>
         /// Exit the lock with an optional post-release memory barrier safely. Ensure the lock was taken before calling this method, else it will throw
         /// </summary>
-        /// <exception cref="SynchronizationLockException">Thrown if the current thread does not own the lock</exception>[MethodImpl(AggressiveInlining_AggressiveOpts)]
+        /// <exception cref="SynchronizationLockException">Thrown if the current thread does not own the lock</exception>
+        [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void Exit(bool memBarrier)
         {
             Exit();
@@ -151,7 +158,8 @@ namespace Locks
         /// <summary>
         /// Exit the lock with a post-release memory barrier safely. Ensure the lock was taken before calling this method, else it will throw
         /// </summary>
-        /// <exception cref="SynchronizationLockException">Thrown if the current thread does not own the lock</exception>[MethodImpl(AggressiveInlining_AggressiveOpts)]
+        /// <exception cref="SynchronizationLockException">Thrown if the current thread does not own the lock</exception>
+        [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void ExitWithBarrier()
         {
             Exit();
@@ -188,7 +196,14 @@ namespace Locks
         }
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
-        public void EnsureOwnedAndOwnedByCurrentThread()
+        private void EnsurePositiveTimeSpan(TimeSpan timeSpan)
+        {
+            if (timeSpan < TimeSpan.Zero)
+                ThrowHelper.ThrowArgumentException("Cannot be zero", nameof(timeSpan));
+        }
+
+        [MethodImpl(AggressiveInlining_AggressiveOpts)]
+        private void EnsureOwnedAndOwnedByCurrentThread()
         {
             if (_acquired == 0 || Thread.CurrentThread.ManagedThreadId != (_acquired >> 1))
                 ThrowHelper.ThrowSynchronizationLockException("Lock is not owned by current thread");

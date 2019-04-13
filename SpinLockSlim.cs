@@ -25,7 +25,8 @@ namespace Locks
         /// whether the lock was taken and needs to be released using <see cref="Exit()"/>
         /// This method may never exit
         /// </summary>
-        /// <param name="taken">A reference to a bool that indicates whether the lock is taken.
+        /// <param name="taken">A reference to a bool that indicates whether the lock is taken. Must
+        /// be <c>false</c> when passed, else the internal state or return state may be corrupted.
         /// If the method returns, this is guaranteed to be <c>true</c></param>
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void Enter(ref bool taken)
@@ -44,7 +45,8 @@ namespace Locks
         /// <c>true</c> if the lock was taken, else <c>false</c>. If <paramref name="taken"/> is
         /// <c>true</c>, <see cref="Exit()"/> must be called to release it, else, it must not be called
         /// </summary>
-        /// <param name="taken">A reference to a bool that indicates whether the lock is taken</param>
+        /// <param name="taken">A reference to a bool that indicates whether the lock is taken. Must
+        /// be <c>false</c> when passed, else the internal state or return state may be corrupted</param>
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void TryEnter(ref bool taken)
         {
@@ -58,7 +60,8 @@ namespace Locks
         /// If <paramref name="taken"/> is <c>true</c>, <see cref="Exit()"/> must be called to release
         /// it, else, it must not be called
         /// </summary>
-        /// <param name="taken">A reference to a bool that indicates whether the lock is taken</param>
+        /// <param name="taken">A reference to a bool that indicates whether the lock is taken. Must
+        /// be <c>false</c> when passed, else the internal state or return state may be corrupted</param>
         /// <param name="iterations">The number of attempts to acquire the lock before returning
         /// without the lock</param>
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
@@ -77,7 +80,7 @@ namespace Locks
             taken = true;
         }
 
-        private static readonly Stopwatch Watch = Stopwatch.StartNew();
+        private static readonly Stopwatch Timer = Stopwatch.StartNew();
 
         /// <summary>
         /// Try to safely enter the lock for a certain <see cref="TimeSpan"/> (<paramref name="timeout"/>).
@@ -85,21 +88,25 @@ namespace Locks
         /// If <paramref name="taken"/> is <c>true</c>, <see cref="Exit()"/> must be called to release
         /// it, else, it must not be called
         /// </summary>
-        /// <param name="taken">A reference to a bool that indicates whether the lock is taken</param>
+        /// <param name="taken">A reference to a bool that indicates whether the lock is taken. Must
+        /// be <c>false</c> when passed, else the internal state or return state may be corrupted</param>
         /// <param name="timeout">The <see cref="TimeSpan"/> to attempt to acquire the lock for before
-        /// returning without the lock</param>
+        /// returning without the lock. A negative <see cref="TimeSpan"/>will cause undefined behaviour</param>
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void TryEnter(ref bool taken, TimeSpan timeout)
         {
-            TimeSpan start = Watch.Elapsed;
-
-            // if it acquired == 0, change it to 1 and return true, else return false
-            while (Interlocked.CompareExchange(ref _acquired, 1, 0) != 0)
+            unchecked
             {
-                if ((Watch.Elapsed - start) >= timeout)
+                var start = (ulong)Environment.TickCount;
+                var end = (ulong)timeout.Milliseconds + start;
+
+                // if it acquired == 0, change it to 1 and return true, else return false
+                while (Interlocked.CompareExchange(ref _acquired, 1, 0) != 0)
                 {
-                    taken = false;
-                    return;
+                    if ((uint)Environment.TickCount >= end)
+                    {
+                        return;
+                    }
                 }
             }
 
