@@ -15,6 +15,13 @@ namespace Locks
     [DebuggerDisplay("Acquired = {(_acquired & 1) == 1}, OwnerThreadId = {_acquired >> 1} ")]
     public struct SpinLockSlimChecked
     {
+        static unsafe SpinLockSlimChecked()
+        {
+            if (sizeof(SpinLockSlim) != sizeof(SpinLockSlimChecked))
+                throw new InvalidOperationException(
+                    $"{nameof(SpinLockSlimChecked)} does not match size of {nameof(SpinLockSlim)}");
+        }
+
         // ReSharper disable once InconsistentNaming -- just for clarity
         private const MethodImplOptions AggressiveInlining_AggressiveOpts =
             MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization;
@@ -120,7 +127,7 @@ namespace Locks
             // and return true, else retry until it we run out of time
             while (Interlocked.CompareExchange(ref _acquired, 1, 0) != 0)
             {
-                if ((Watch.Elapsed - start) >= timeout)
+                if (Watch.Elapsed - start >= timeout)
                 {
                     taken = false;
                     return;
