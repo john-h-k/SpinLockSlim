@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -168,6 +169,7 @@ namespace Locks
         }
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
+        [DebuggerHidden]
         private static void ValidateRefBoolAsFalse(bool value)
         {
             if (value)
@@ -175,6 +177,7 @@ namespace Locks
         }
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
+        [DebuggerHidden]
         private void EnsureNotRecursiveEntry()
         {
             if (Thread.CurrentThread.ManagedThreadId == (_acquired >> 1))
@@ -182,6 +185,7 @@ namespace Locks
         }
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
+        [DebuggerHidden]
         private void EnsureFalseAndNotRecursiveEntry(bool value)
         {
             ValidateRefBoolAsFalse(value);
@@ -189,6 +193,7 @@ namespace Locks
         }
 
         // uint conversions important - prevent sign being preserved
+        [DebuggerHidden]
         private static int NewAcquiredValue
         {
             [MethodImpl(AggressiveInlining_AggressiveOpts)]
@@ -196,6 +201,7 @@ namespace Locks
         }
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
+        [DebuggerHidden]
         private void EnsurePositiveTimeSpan(TimeSpan timeSpan)
         {
             if (timeSpan < TimeSpan.Zero)
@@ -203,6 +209,7 @@ namespace Locks
         }
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
+        [DebuggerHidden]
         private void EnsureOwnedAndOwnedByCurrentThread()
         {
             if (_acquired == 0 || Thread.CurrentThread.ManagedThreadId != (_acquired >> 1))
