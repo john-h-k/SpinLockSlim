@@ -11,6 +11,7 @@ namespace Locks
     /// Provided a lightweight spin lock for synchronization in high performance
     /// scenarios with a low hold time
     /// </summary>
+    [DebuggerDisplay("Use " + nameof(SpinLockSlimChecked) + " for debugging")]
     public struct SpinLockSlim
     {
         // ReSharper disable once InconsistentNaming -- just for clarity
@@ -20,9 +21,14 @@ namespace Locks
         private volatile int _acquired; // either 1 or 0
 
         /// <summary>
+        /// Returns <c>true</c> if the lock is acquired, else <c>false</c>
+        /// </summary>
+        public bool IsAcquired => _acquired != 0;
+
+        /// <summary>
         /// Enter the lock. If this method returns, <paramref name="taken"/>
         /// will be <c>true</c>. If an exception occurs, <paramref name="taken"/> will indicate
-        /// whether the lock was taken and needs to be released using <see cref="Exit()"/>
+        /// whether the lock was taken and needs to be released using <see cref="Exit()"/>.
         /// This method may never exit
         /// </summary>
         /// <param name="taken">A reference to a bool that indicates whether the lock is taken. Must
@@ -97,13 +103,13 @@ namespace Locks
         {
             unchecked
             {
-                var start = (ulong)Environment.TickCount;
-                var end = (ulong)timeout.Milliseconds + start;
+                long start = Timer.ElapsedTicks;
+                var end = (long)((timeout.TotalMilliseconds / Stopwatch.Frequency) + start);
 
                 // if it acquired == 0, change it to 1 and return true, else return false
                 while (Interlocked.CompareExchange(ref _acquired, 1, 0) != 0)
                 {
-                    if ((uint)Environment.TickCount >= end)
+                    if (Timer.ElapsedTicks >= end)
                     {
                         return;
                     }
@@ -134,7 +140,6 @@ namespace Locks
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void Exit(bool memBarrier)
         {
-            // release the lock - int32 write will always be atomic
             Exit();
 
             if (memBarrier)
@@ -149,7 +154,6 @@ namespace Locks
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void ExitWithBarrier()
         {
-            // release the lock - int32 write will always be atomic
             Exit();
 
             Thread.MemoryBarrier();

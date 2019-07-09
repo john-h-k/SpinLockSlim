@@ -12,14 +12,14 @@ namespace Locks
     /// Provided a checked, debug, lightweight spin lock for synchronization in high performance
     /// scenarios with a low hold time, with additional safety and checks over <see cref="SpinLockSlim"/>
     /// </summary>
-    [DebuggerDisplay("Acquired = {(_acquired & 1) == 1}, OwnerThreadId = {_acquired >> 1} ")]
+    [DebuggerDisplay("Acquired = {" + nameof(_acquired) + " != 0}, OwnerThreadId = {" + nameof(_acquired) + "} ")]
     public struct SpinLockSlimChecked
     {
         static unsafe SpinLockSlimChecked()
         {
             if (sizeof(SpinLockSlim) != sizeof(SpinLockSlimChecked))
                 throw new InvalidOperationException(
-                    $"{nameof(SpinLockSlimChecked)} does not match size of {nameof(SpinLockSlim)}");
+                    $"{nameof(SpinLockSlimChecked)} (size {sizeof(SpinLockSlimChecked)}) does not match size of {nameof(SpinLockSlim)} (size {sizeof(SpinLockSlim)})");
         }
 
         // ReSharper disable once InconsistentNaming -- just for clarity
@@ -28,6 +28,11 @@ namespace Locks
 
         private volatile int _acquired; // either 1 or 0
         // high 31 bits used for Thread::ManagedThreadId - lowest bit is for actual _acquired value
+
+        /// <summary>
+        /// Returns <c>true</c> if the lock is acquired, else <c>false</c>
+        /// </summary>
+        public bool IsAcquired => _acquired != 0;
 
         /// <summary>
         /// Safely enter the lock. If this method returns, <paramref name="taken"/>
@@ -101,7 +106,7 @@ namespace Locks
             taken = true;
         }
 
-        private static readonly Stopwatch Watch = Stopwatch.StartNew();
+        private static readonly Stopwatch Timer = Stopwatch.StartNew();
 
         /// <summary>
         /// Try to safely enter the lock for a certain <see cref="TimeSpan"/> (<paramref name="timeout"/>).
@@ -118,18 +123,17 @@ namespace Locks
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void TryEnter(ref bool taken, TimeSpan timeout)
         {
-            TimeSpan start = Watch.Elapsed;
-
             EnsurePositiveTimeSpan(timeout);
             EnsureFalseAndNotRecursiveEntry(taken);
 
-            // if acquired == 0 (the lock is not taken), change it to 1 (take the lock)
-            // and return true, else retry until it we run out of time
-            while (Interlocked.CompareExchange(ref _acquired, 1, 0) != 0)
+            long start = Timer.ElapsedTicks;
+            var end = (long)((timeout.TotalMilliseconds / Stopwatch.Frequency) + start);
+
+            // if it acquired == 0, change it to 1 and return true, else return false
+            while (Interlocked.CompareExchange(ref _acquired, NewAcquiredValue, 0) != 0)
             {
-                if (Watch.Elapsed - start >= timeout)
+                if (Timer.ElapsedTicks >= end)
                 {
-                    taken = false;
                     return;
                 }
             }
@@ -187,8 +191,10 @@ namespace Locks
         [DebuggerHidden]
         private void EnsureNotRecursiveEntry()
         {
-            if (Thread.CurrentThread.ManagedThreadId == (_acquired >> 1))
-                ThrowHelper.ThrowLockRecursionException();
+            int threadId = Thread.CurrentThread.ManagedThreadId;
+            if (threadId == _acquired)
+                ThrowHelper.ThrowLockRecursionException(
+                    $"Lock is owned by current thread (ThreadId {threadId}), yet the current thread is attempting to acquire the lock");
         }
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
@@ -199,12 +205,11 @@ namespace Locks
             EnsureNotRecursiveEntry();
         }
 
-        // uint conversions important - prevent sign being preserved
         [DebuggerHidden]
         private static int NewAcquiredValue
         {
             [MethodImpl(AggressiveInlining_AggressiveOpts)]
-            get => unchecked((int)(1 | ((uint)Thread.CurrentThread.ManagedThreadId << 1)));
+            get => Thread.CurrentThread.ManagedThreadId;
         }
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
@@ -212,15 +217,17 @@ namespace Locks
         private void EnsurePositiveTimeSpan(TimeSpan timeSpan)
         {
             if (timeSpan < TimeSpan.Zero)
-                ThrowHelper.ThrowArgumentException("Cannot be zero", nameof(timeSpan));
+                ThrowHelper.ThrowArgumentException("Must be greater than or equal to TimeSpan.Zero", nameof(timeSpan));
         }
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         [DebuggerHidden]
         private void EnsureOwnedAndOwnedByCurrentThread()
         {
-            if (_acquired == 0 || Thread.CurrentThread.ManagedThreadId != (_acquired >> 1))
-                ThrowHelper.ThrowSynchronizationLockException("Lock is not owned by current thread");
+            int threadId = Thread.CurrentThread.ManagedThreadId;
+            if (threadId != _acquired)
+                ThrowHelper.ThrowSynchronizationLockException(
+                    $"Lock is not owned by current thread - lock is owned by thread with ThreadId {_acquired}, but thread trying to exit has ThreadId {threadId}");
         }
     }
 }
