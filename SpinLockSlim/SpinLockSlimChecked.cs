@@ -31,6 +31,7 @@ namespace Locks
 
         private volatile int _acquired; // used either to be 0 for not acquired or the managed thread ID
 
+        [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public static SpinLockSlim Create() => new SpinLockSlim();
 
         /// <summary>

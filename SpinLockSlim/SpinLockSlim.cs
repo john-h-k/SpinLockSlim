@@ -23,6 +23,7 @@ namespace Locks
 
         private volatile int _acquired; // either 1 or 0
 
+        [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public static SpinLockSlim Create() => new SpinLockSlim();
 
         /// <summary>
@@ -109,7 +110,7 @@ namespace Locks
             unchecked
             {
                 long start = Timer.ElapsedTicks;
-                var end = (long)((timeout.TotalMilliseconds / Stopwatch.Frequency) + start);
+                var end = (long)((timeout.TotalMilliseconds * Stopwatch.Frequency) + start);
 
                 // if it acquired == 0, change it to 1 and return true, else return false
                 while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
