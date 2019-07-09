@@ -14,11 +14,16 @@ namespace Locks
     [DebuggerDisplay("Use " + nameof(SpinLockSlimChecked) + " for debugging")]
     public struct SpinLockSlim
     {
+        private static int True => 1;
+        private static int False => 0;
+
         // ReSharper disable once InconsistentNaming -- just for clarity
         private const MethodImplOptions AggressiveInlining_AggressiveOpts =
             MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization;
 
         private volatile int _acquired; // either 1 or 0
+
+        public static SpinLockSlim Create() => new SpinLockSlim();
 
         /// <summary>
         /// Returns <c>true</c> if the lock is acquired, else <c>false</c>
@@ -38,7 +43,7 @@ namespace Locks
         public void Enter(ref bool taken)
         {
             // while acquired == 1, loop, then when it == 0, exit and set it to 1
-            while (Interlocked.CompareExchange(ref _acquired, 1, 0) != 0)
+            while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
             {
                 // NOP
             }
@@ -57,7 +62,7 @@ namespace Locks
         public void TryEnter(ref bool taken)
         {
             // if it acquired == 0, change it to 1 and return true, else return false
-            taken = Interlocked.CompareExchange(ref _acquired, 1, 0) == 0;
+            taken = Interlocked.CompareExchange(ref _acquired, True, False) == False;
         }
 
         /// <summary>
@@ -74,7 +79,7 @@ namespace Locks
         public void TryEnter(ref bool taken, uint iterations)
         {
             // if it acquired == 0, change it to 1 and return true, else return false
-            while (Interlocked.CompareExchange(ref _acquired, 1, 0) != 0)
+            while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
             {
                 if (iterations-- == 0) // postfix decrement, so no issue if iterations == 0 at first
                 {
@@ -107,7 +112,7 @@ namespace Locks
                 var end = (long)((timeout.TotalMilliseconds / Stopwatch.Frequency) + start);
 
                 // if it acquired == 0, change it to 1 and return true, else return false
-                while (Interlocked.CompareExchange(ref _acquired, 1, 0) != 0)
+                while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
                 {
                     if (Timer.ElapsedTicks >= end)
                     {
@@ -128,7 +133,7 @@ namespace Locks
         public void Exit()
         {
             // release the lock - int32 write will always be atomic
-            _acquired = 0;
+            _acquired = False;
         }
 
         /// <summary>
@@ -136,13 +141,13 @@ namespace Locks
         /// ownership of the lock. Use <see cref="SpinLockSlimChecked"/> for debugging to ensure your code
         /// only calls <see cref="Exit()"/> when it has ownership
         /// </summary>[MethodImpl(AggressiveInlining_AggressiveOpts)]
-        /// <param name="memBarrier">Whether a memory barrier should be inserted after the release</param>
+        /// <param name="insertMemBarrier">Whether a memory barrier should be inserted after the release</param>
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
-        public void Exit(bool memBarrier)
+        public void Exit(bool insertMemBarrier)
         {
             Exit();
 
-            if (memBarrier)
+            if (insertMemBarrier)
                 Thread.MemoryBarrier();
         }
 

@@ -22,17 +22,21 @@ namespace Locks
                     $"{nameof(SpinLockSlimChecked)} (size {sizeof(SpinLockSlimChecked)}) does not match size of {nameof(SpinLockSlim)} (size {sizeof(SpinLockSlim)})");
         }
 
+        private static int True => Thread.CurrentThread.ManagedThreadId;
+        private static int False => 0;
+
         // ReSharper disable once InconsistentNaming -- just for clarity
         private const MethodImplOptions AggressiveInlining_AggressiveOpts =
             MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization;
 
-        private volatile int _acquired; // either 1 or 0
-        // high 31 bits used for Thread::ManagedThreadId - lowest bit is for actual _acquired value
+        private volatile int _acquired; // used either to be 0 for not acquired or the managed thread ID
+
+        public static SpinLockSlim Create() => new SpinLockSlim();
 
         /// <summary>
         /// Returns <c>true</c> if the lock is acquired, else <c>false</c>
         /// </summary>
-        public bool IsAcquired => _acquired != 0;
+        public bool IsAcquired => _acquired != False;
 
         /// <summary>
         /// Safely enter the lock. If this method returns, <paramref name="taken"/>
@@ -50,7 +54,7 @@ namespace Locks
             EnsureFalseAndNotRecursiveEntry(taken);
 
             // while acquired == 1, loop, then when it == 0, exit and set it to 1
-            while (Interlocked.CompareExchange(ref _acquired, NewAcquiredValue, 0) != 0)
+            while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
             {
                 // NOP
             }
@@ -73,7 +77,7 @@ namespace Locks
 
             // if acquired == 0 (the lock is not taken), change it to 1 (take the lock)
             // and return true, else return false
-            taken = Interlocked.CompareExchange(ref _acquired, NewAcquiredValue, 0) == 0;
+            taken = Interlocked.CompareExchange(ref _acquired, True, False) == False;
         }
 
         /// <summary>
@@ -94,7 +98,7 @@ namespace Locks
 
             // if acquired == 0 (the lock is not taken), change it to 1 (take the lock)
             // and return true, else retry until it we run out of iterations
-            while (Interlocked.CompareExchange(ref _acquired, NewAcquiredValue, 0) != 0)
+            while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
             {
                 if (iterations-- == 0) // postfix decrement, so no issue if iterations == 0 at first
                 {
@@ -118,8 +122,8 @@ namespace Locks
         /// <param name="timeout">The <see cref="TimeSpan"/> to attempt to acquire the lock for before
         /// returning without the lock. A negative <see cref="TimeSpan"/>will cause an exception</param>
         /// <exception cref="ArgumentException">Thrown if <paramref name="taken"/> is <c>true</c></exception>
-        /// <exception cref="LockRecursionException">Thrown if the current thread already owns this lock</exception>
         /// <exception cref="ArgumentException">Thrown if <paramref name="timeout"/> is negative</exception>
+        /// <exception cref="LockRecursionException">Thrown if the current thread already owns this lock</exception>
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void TryEnter(ref bool taken, TimeSpan timeout)
         {
@@ -130,7 +134,7 @@ namespace Locks
             var end = (long)((timeout.TotalMilliseconds / Stopwatch.Frequency) + start);
 
             // if it acquired == 0, change it to 1 and return true, else return false
-            while (Interlocked.CompareExchange(ref _acquired, NewAcquiredValue, 0) != 0)
+            while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
             {
                 if (Timer.ElapsedTicks >= end)
                 {
@@ -151,7 +155,7 @@ namespace Locks
             EnsureOwnedAndOwnedByCurrentThread();
 
             // release the lock - int32 write will always be atomic
-            _acquired = 0;
+            _acquired = False;
         }
 
         /// <summary>
@@ -159,11 +163,11 @@ namespace Locks
         /// </summary>
         /// <exception cref="SynchronizationLockException">Thrown if the current thread does not own the lock</exception>
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
-        public void Exit(bool memBarrier)
+        public void Exit(bool insertMemBarrier)
         {
             Exit();
 
-            if (memBarrier)
+            if (insertMemBarrier)
                 Thread.MemoryBarrier();
         }
 
@@ -205,19 +209,13 @@ namespace Locks
             EnsureNotRecursiveEntry();
         }
 
-        [DebuggerHidden]
-        private static int NewAcquiredValue
-        {
-            [MethodImpl(AggressiveInlining_AggressiveOpts)]
-            get => Thread.CurrentThread.ManagedThreadId;
-        }
-
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         [DebuggerHidden]
         private void EnsurePositiveTimeSpan(TimeSpan timeSpan)
         {
             if (timeSpan < TimeSpan.Zero)
-                ThrowHelper.ThrowArgumentException("Must be greater than or equal to TimeSpan.Zero", nameof(timeSpan));
+                ThrowHelper.ThrowArgumentException(
+                    $"Must be greater than or equal to {nameof(TimeSpan)}.{nameof(TimeSpan.Zero)}", nameof(timeSpan));
         }
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
