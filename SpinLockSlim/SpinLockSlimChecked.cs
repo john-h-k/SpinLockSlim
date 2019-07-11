@@ -55,7 +55,7 @@ namespace Locks
             EnsureFalseAndNotRecursiveEntry(taken);
 
             // while acquired == 1, loop, then when it == 0, exit and set it to 1
-            while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
+            while (TryAcquire())
             {
                 // NOP
             }
@@ -78,7 +78,7 @@ namespace Locks
 
             // if acquired == 0 (the lock is not taken), change it to 1 (take the lock)
             // and return true, else return false
-            taken = Interlocked.CompareExchange(ref _acquired, True, False) == False;
+            taken = TryAcquire();
         }
 
         /// <summary>
@@ -99,19 +99,16 @@ namespace Locks
 
             // if acquired == 0 (the lock is not taken), change it to 1 (take the lock)
             // and return true, else retry until it we run out of iterations
-            while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
+            while (TryAcquire())
             {
                 if (iterations-- == 0) // postfix decrement, so no issue if iterations == 0 at first
                 {
-                    taken = false;
                     return;
                 }
             }
 
             taken = true;
         }
-
-        private static readonly Stopwatch Timer = Stopwatch.StartNew();
 
         /// <summary>
         /// Try to safely enter the lock for a certain <see cref="TimeSpan"/> (<paramref name="timeout"/>).
@@ -131,15 +128,18 @@ namespace Locks
             EnsurePositiveTimeSpan(timeout);
             EnsureFalseAndNotRecursiveEntry(taken);
 
-            long start = Timer.ElapsedTicks;
-            var end = (long)((timeout.TotalMilliseconds / Stopwatch.Frequency) + start);
-
-            // if it acquired == 0, change it to 1 and return true, else return false
-            while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
+            unchecked
             {
-                if (Timer.ElapsedTicks >= end)
+                long start = Stopwatch.GetTimestamp();
+                var end = (long)((timeout.TotalMilliseconds * Stopwatch.Frequency) + start);
+
+                // if it acquired == 0, change it to 1 and return true, else return false
+                while (TryAcquire())
                 {
-                    return;
+                    if (Stopwatch.GetTimestamp() >= end)
+                    {
+                        return;
+                    }
                 }
             }
 
@@ -186,7 +186,7 @@ namespace Locks
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         [DebuggerHidden]
-        private static void ValidateRefBoolAsFalse(bool value)
+        private static void ValidateRefBoolAsFalse(in bool value)
         {
             if (value)
                 ThrowHelper.ThrowArgumentException("Bool must be false");
@@ -204,7 +204,7 @@ namespace Locks
 
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         [DebuggerHidden]
-        private void EnsureFalseAndNotRecursiveEntry(bool value)
+        private void EnsureFalseAndNotRecursiveEntry(in bool value)
         {
             ValidateRefBoolAsFalse(value);
             EnsureNotRecursiveEntry();
@@ -228,5 +228,8 @@ namespace Locks
                 ThrowHelper.ThrowSynchronizationLockException(
                     $"Lock is not owned by current thread - lock is owned by thread with ThreadId {_acquired}, but thread trying to exit has ThreadId {threadId}");
         }
+
+        [MethodImpl(AggressiveInlining_AggressiveOpts)]
+        private bool TryAcquire() => Interlocked.CompareExchange(ref _acquired, True, False) != False;
     }
 }

@@ -44,7 +44,7 @@ namespace Locks
         public void Enter(ref bool taken)
         {
             // while acquired == 1, loop, then when it == 0, exit and set it to 1
-            while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
+            while (TryAcquire())
             {
                 // NOP
             }
@@ -63,7 +63,7 @@ namespace Locks
         public void TryEnter(ref bool taken)
         {
             // if it acquired == 0, change it to 1 and return true, else return false
-            taken = Interlocked.CompareExchange(ref _acquired, True, False) == False;
+            taken = TryAcquire();
         }
 
         /// <summary>
@@ -80,19 +80,16 @@ namespace Locks
         public void TryEnter(ref bool taken, uint iterations)
         {
             // if it acquired == 0, change it to 1 and return true, else return false
-            while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
+            while (TryAcquire())
             {
                 if (iterations-- == 0) // postfix decrement, so no issue if iterations == 0 at first
                 {
-                    taken = false;
                     return;
                 }
             }
 
             taken = true;
         }
-
-        private static readonly Stopwatch Timer = Stopwatch.StartNew();
 
         /// <summary>
         /// Try to safely enter the lock for a certain <see cref="TimeSpan"/> (<paramref name="timeout"/>).
@@ -109,13 +106,13 @@ namespace Locks
         {
             unchecked
             {
-                long start = Timer.ElapsedTicks;
-                var end = (long)((timeout.TotalMilliseconds * Stopwatch.Frequency) + start);
+                long start = Stopwatch.GetTimestamp();
+                long end = (long)timeout.TotalMilliseconds * Stopwatch.Frequency + start;
 
                 // if it acquired == 0, change it to 1 and return true, else return false
-                while (Interlocked.CompareExchange(ref _acquired, True, False) != False)
+                while (TryAcquire())
                 {
-                    if (Timer.ElapsedTicks >= end)
+                    if (Stopwatch.GetTimestamp() >= end)
                     {
                         return;
                     }
@@ -141,7 +138,7 @@ namespace Locks
         /// Exit the lock with an optional post-release memory barrier. This method is dangerous and must be called only once the caller is sure they have
         /// ownership of the lock. Use <see cref="SpinLockSlimChecked"/> for debugging to ensure your code
         /// only calls <see cref="Exit()"/> when it has ownership
-        /// </summary>[MethodImpl(AggressiveInlining_AggressiveOpts)]
+        /// </summary>
         /// <param name="insertMemBarrier">Whether a memory barrier should be inserted after the release</param>
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void Exit(bool insertMemBarrier)
@@ -164,5 +161,8 @@ namespace Locks
 
             Thread.MemoryBarrier();
         }
+
+        [MethodImpl(AggressiveInlining_AggressiveOpts)]
+        private bool TryAcquire() => Interlocked.CompareExchange(ref _acquired, True, False) != False;
     }
 }
