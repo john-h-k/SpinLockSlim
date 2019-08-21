@@ -29,7 +29,9 @@ namespace Locks
         /// <summary>
         /// Returns <c>true</c> if the lock is acquired, else <c>false</c>
         /// </summary>
-        public bool IsAcquired => _acquired != 0;
+#pragma warning disable 420 // Unsafe.As<,> doesn't read the reference so the lack of volatility is not an issue, but we do need to treat the returned reference as volatile
+        public bool IsAcquired => Volatile.Read(ref Unsafe.As<int, bool>(ref _acquired));
+#pragma warning restore 420
 
         /// <summary>
         /// Enter the lock. If this method returns, <paramref name="taken"/>
@@ -82,7 +84,7 @@ namespace Locks
             // if it acquired == 0, change it to 1 and return true, else return false
             while (TryAcquire())
             {
-                if (iterations-- == 0) // postfix decrement, so no issue if iterations == 0 at first
+                if (unchecked(iterations--) == 0) // postfix decrement, so no issue if iterations == 0 at first
                 {
                     return;
                 }
@@ -104,18 +106,15 @@ namespace Locks
         [MethodImpl(AggressiveInlining_AggressiveOpts)]
         public void TryEnter(ref bool taken, TimeSpan timeout)
         {
-            unchecked
-            {
-                long start = Stopwatch.GetTimestamp();
-                long end = (long)timeout.TotalMilliseconds * Stopwatch.Frequency + start;
+            long start = Stopwatch.GetTimestamp();
+            long end = unchecked((long)timeout.TotalMilliseconds * Stopwatch.Frequency + start);
 
-                // if it acquired == 0, change it to 1 and return true, else return false
-                while (TryAcquire())
+            // if it acquired == 0, change it to 1 and return true, else return false
+            while (TryAcquire())
+            {
+                if (Stopwatch.GetTimestamp() >= end)
                 {
-                    if (Stopwatch.GetTimestamp() >= end)
-                    {
-                        return;
-                    }
+                    return;
                 }
             }
 

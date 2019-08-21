@@ -101,7 +101,7 @@ namespace Locks
             // and return true, else retry until it we run out of iterations
             while (TryAcquire())
             {
-                if (iterations-- == 0) // postfix decrement, so no issue if iterations == 0 at first
+                if (unchecked(iterations--) == 0) // postfix decrement, so no issue if iterations == 0 at first
                 {
                     return;
                 }
@@ -131,7 +131,7 @@ namespace Locks
             unchecked
             {
                 long start = Stopwatch.GetTimestamp();
-                var end = (long)((timeout.TotalMilliseconds * Stopwatch.Frequency) + start);
+                var end = unchecked((long)((timeout.TotalMilliseconds * Stopwatch.Frequency) + start));
 
                 // if it acquired == 0, change it to 1 and return true, else return false
                 while (TryAcquire())
@@ -206,7 +206,7 @@ namespace Locks
         [DebuggerHidden]
         private void EnsureFalseAndNotRecursiveEntry(in bool value)
         {
-            ValidateRefBoolAsFalse(value);
+            ValidateRefBoolAsFalse(in value);
             EnsureNotRecursiveEntry();
         }
 

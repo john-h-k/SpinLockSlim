@@ -6,11 +6,8 @@ namespace Locks
     {
         public static void Main(string[] args)
         {
-            new SpinLockSlim().Exit();
+            var s = new SpinLockSlimChecked();
+            
         }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void Exit(SpinLockSlim spinLock)
-            => spinLock.Exit();
     }
 }
